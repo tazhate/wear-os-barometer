@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="400dp"
+    android:height="400dp"
+    android:viewportWidth="400"
+    android:viewportHeight="400">
+
+    <!-- Background -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M0,0 L400,0 L400,400 L0,400 Z" />
+
+    <!-- Title text -->
+    <path
+        android:fillColor="#999999"
+        android:pathData="M160,150 L240,150 L240,165 L160,165 Z" />
+
+    <!-- Altitude value -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M140,185 L260,185 L260,225 L140,225 Z" />
+
+    <!-- Unit text -->
+    <path
+        android:fillColor="#CCCCCC"
+        android:pathData="M185,235 L215,235 L215,250 L185,250 Z" />
+
+</vector>
