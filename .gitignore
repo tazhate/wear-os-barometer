@@ -18,7 +18,6 @@ release/
 
 # Gradle files
 .gradle/
-gradle*
 build/
 gradle-8.9/
 
