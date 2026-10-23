@@ -40,9 +40,8 @@ dependencies {
     implementation("androidx.wear.tiles:tiles:1.5.0")
     implementation("androidx.wear.protolayout:protolayout:1.3.0")
     implementation("androidx.wear.protolayout:protolayout-material:1.3.0")
-    implementation("androidx.wear.protolayout:protolayout-material3:1.3.0")
 
-    // Horologist for coroutine support
+    // Horologist: SuspendingTileService
     implementation("com.google.android.horologist:horologist-tiles:0.6.21")
 
     // Location services
@@ -54,4 +53,6 @@ dependencies {
 
     // AndroidX
     implementation("androidx.core:core-ktx:1.15.0")
+
+    testImplementation("junit:junit:4.13.2")
 }
