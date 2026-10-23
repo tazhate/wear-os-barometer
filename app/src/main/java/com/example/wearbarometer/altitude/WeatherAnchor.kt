@@ -11,6 +11,8 @@ import java.util.Locale
 data class Weather(
     val qnhHpa: Double,
     val temperatureC: Double?,
+    /** Elevation of the model point the temperature belongs to. */
+    val elevationM: Double?,
     val latitude: Double,
     val longitude: Double,
     val fetchedAtMs: Long,
@@ -43,6 +45,7 @@ object WeatherAnchor {
             Weather(
                 qnhHpa = current.getDouble("pressure_msl"),
                 temperatureC = current.optDouble("temperature_2m").takeUnless { it.isNaN() },
+                elevationM = json.optDouble("elevation").takeUnless { it.isNaN() },
                 latitude = latitude,
                 longitude = longitude,
                 fetchedAtMs = nowMs,

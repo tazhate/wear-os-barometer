@@ -16,6 +16,8 @@ data class FilterState(
     val timeMs: Long,
     val source: AnchorSource,
     val anchorTimeMs: Long,
+    /** Sea level equivalent air temperature that scales pressure differences into meters. */
+    val seaLevelTempK: Double = Atmosphere.STANDARD_SEA_LEVEL_TEMP_K,
 ) {
     val sigmaM: Double get() = sqrt(varianceM2)
 
@@ -65,13 +67,38 @@ class AltitudeFilter(var state: FilterState) {
         return true
     }
 
-    /** Hard reset to a known altitude, without the outlier gate. */
-    fun calibrate(pressureHpa: Double, knownAltitudeM: Double, nowMs: Long) {
-        state = state.copy(varianceM2 = MAX_VARIANCE_M2)
-        update(Atmosphere.offsetFromAltitude(pressureHpa, knownAltitudeM), MANUAL_SIGMA_M, AnchorSource.MANUAL, nowMs)
+    /** Anchor that knows the altitude at the moment [pressureHpa] was measured. */
+    fun updateAltitude(pressureHpa: Double, altitudeM: Double, sigmaM: Double, source: AnchorSource, nowMs: Long) =
+        update(Atmosphere.offsetFromAltitude(pressureHpa, altitudeM, state.seaLevelTempK), sigmaM, source, nowMs)
+
+    /** Anchor that knows the sea level pressure now; [pressureHpa] is the current reading. */
+    fun updateQnh(pressureHpa: Double, qnhHpa: Double, sigmaM: Double, nowMs: Long) =
+        update(Atmosphere.offsetFromQnh(pressureHpa, qnhHpa, state.seaLevelTempK), sigmaM, AnchorSource.QNH, nowMs)
+
+    /**
+     * New air temperature. The current altitude at [pressureHpa] stays where it is; only height differences
+     * from here on are scaled differently.
+     */
+    fun setSeaLevelTemperature(pressureHpa: Double, seaLevelTempK: Double) {
+        val altitudeNow = altitude(pressureHpa)
+        state = state.copy(
+            seaLevelTempK = seaLevelTempK,
+            offsetM = Atmosphere.isaAltitude(pressureHpa, seaLevelTempK) - altitudeNow,
+        )
     }
 
-    fun altitude(pressureHpa: Double): Double = Atmosphere.isaAltitude(pressureHpa) - state.offsetM
+    /** Hard reset to a known altitude: the user knows where they stand, nothing is averaged in. */
+    fun calibrate(pressureHpa: Double, knownAltitudeM: Double, nowMs: Long) {
+        state = state.copy(
+            offsetM = Atmosphere.offsetFromAltitude(pressureHpa, knownAltitudeM, state.seaLevelTempK),
+            varianceM2 = MANUAL_SIGMA_M * MANUAL_SIGMA_M,
+            timeMs = max(nowMs, state.timeMs),
+            source = AnchorSource.MANUAL,
+            anchorTimeMs = nowMs,
+        )
+    }
+
+    fun altitude(pressureHpa: Double): Double = Atmosphere.isaAltitude(pressureHpa, state.seaLevelTempK) - state.offsetM
 
     companion object {
         const val HOUR_MS = 3_600_000.0
