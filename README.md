@@ -1,150 +1,49 @@
-# 2DO: screenshots & apks
+# Wear OS Barometer
 
-# Барометр для Wear OS
-
-Минималистичное приложение для Wear OS, отображающее высоту над уровнем моря на основе барометрического давления.
+Altitude above sea level on the watch, as a tile and as an app screen. Tested on a Pixel Watch 4 (Wear OS on Android 17). The UI is in Russian.
 
 <img src="screenshots/tile.png" width="200" alt="Tile Screenshot"/> <img src="screenshots/app.png" width="200" alt="App Screenshot"/>
 
-## ✨ Возможности
+## Where the altitude comes from
 
-- 📊 **Точное измерение высоты** - использует встроенный барометр для расчета высоты по стандартной атмосферной формуле
-- 🔄 **Непрерывное обновление** - данные обновляются каждые 5 секунд при открытом тайле
-- 💾 **Кэширование данных** - последние показания сохраняются и отображаются даже после перезапуска
-- 🎯 **Wear OS Tile** - быстрый доступ к высоте прямо с циферблата
-- 🎨 **Минималистичный дизайн** - чистый интерфейс с иконкой гор и крупными цифрами
-- ⚡ **Низкое энергопотребление** - датчик активируется только при просмотре
+A bare barometer on the standard atmosphere (P0 = 1013.25 hPa) is off by however much the weather has moved the pressure. 1 hPa near sea level is 8.3 m. During the anticyclone on 2026-10-23, sea level pressure in Moscow was 1029.8 hPa, and the standard formula read 125 m low.
 
-## 📋 Требования
-
-- **Wear OS 3.0+** (API 30+)
-- Датчик барометрического давления
-- Разрешение на точную геолокацию (для калибровки)
-
-## 🔧 Технические детали
-
-### Принцип работы
-Приложение использует барометрический датчик давления для определения высоты. Расчет производится по стандартной атмосферной формуле:
+So the barometer only handles relative height: its noise is about 0.01 hPa, which is centimeters. Anchors hold the absolute level. Each anchor gives an estimate of the weather offset `b`, and a one-dimensional Kalman filter combines them by their accuracy:
 
 ```
-h = 44330 * (1 - (P/P0)^0.1903)
+altitude = isa(P) - b
 ```
 
-где:
-- `h` - высота в метрах
-- `P` - текущее давление в гПа
-- `P0` - давление на уровне моря (1013.25 гПа)
+| Anchor | Needs network | Error |
+|---|---|---|
+| Manual calibration (long-press the value, turn the crown, tap) | no | 1 m |
+| GNSS height above the geoid (`mslAltitudeMeters`, L1+L5 on this watch) | no | receiver estimate, fixes worse than 25 m are dropped |
+| QNH from Open-Meteo (`pressure_msl`) | yes | 8-10 m |
+| Terrain elevation from Open-Meteo at the fix | yes | 25 m |
 
-### Архитектура
+Without anchors the uncertainty grows by about 3 m per hour. It is shown under the value: `±12 м · GPS`. Above 15 m the value gets a `~` prefix, above 50 m also a `?`. In the mountains without network, GNSS and manual calibration remain.
 
-- **AltitudeTileService** - сервис Wear OS Tile с управлением датчиком давления
-- **MainActivity** - основной экран приложения с реалтайм обновлениями
-- **SharedPreferences** - кэширование последних показаний для быстрого запуска
-- **SensorEventListener** - обработка данных барометра с частотой SENSOR_DELAY_UI
+GNSS altitude is paired with the pressure at the moment of the fix, not the current one. Otherwise a climb in progress would leak into the weather correction.
 
-## 🚀 Установка
+## Tile and app
 
-### Из исходного кода
+The tile refreshes once a minute. Each refresh samples the barometer for about a second and shows the altitude with the saved offset. Every 30 minutes the tile asks for a location fix and the weather in the background, and redraws if anything arrived. Tapping the tile opens the app.
 
-1. Клонируйте репозиторий:
-```bash
-git clone https://github.com/yourusername/wear-barometer.git
-cd wear-barometer
-```
+The app screen reads the barometer 4 times a second and keeps GNSS on while it is open. Location permission and manual calibration live here.
 
-2. Подключите Wear OS устройство или запустите эмулятор
+Coordinates are sent to Open-Meteo: rounded to 0.01° (about 1 km) for the weather, exact for terrain elevation. No API key is needed.
 
-3. Соберите и установите:
-```bash
-./gradlew installDebug
-```
+## Build
 
-### Через ADB
+Needs the Android SDK (compileSdk 35) and JDK 17.
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest assembleDebug
+adb -s <watch> install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## 📱 Использование
+The altitude code is in `app/src/main/java/com/example/wearbarometer/altitude/`. The filter and all the math are plain Kotlin without Android, so the tests run on the JVM.
 
-### Первый запуск
-1. Откройте приложение "Барометр" на часах
-2. Предоставьте разрешение на доступ к точной геолокации
-3. Приложение начнет показывать текущую высоту
+## License
 
-### Добавление Tile
-1. На циферблате свайпните влево/вправо для просмотра тайлов
-2. Скролльте до конца и нажмите "+" (Добавить плитку)
-3. Выберите "Барометр" из списка доступных тайлов
-4. Тайл появится в карусели и будет обновляться каждые 5 секунд
-
-## 📁 Структура проекта
-
-```
-wear-barometer/
-├── app/
-│   ├── src/main/
-│   │   ├── java/com/example/wearbarometer/
-│   │   │   ├── AltitudeTileService.kt    # Tile сервис с барометром
-│   │   │   └── MainActivity.kt           # Основной экран приложения
-│   │   ├── res/
-│   │   │   ├── drawable/
-│   │   │   │   └── ic_mountain.xml       # Иконка гор
-│   │   │   ├── layout/
-│   │   │   │   └── activity_main.xml     # Layout главного экрана
-│   │   │   └── values/
-│   │   │       └── strings.xml
-│   │   └── AndroidManifest.xml
-│   └── build.gradle.kts
-├── build.gradle.kts
-├── settings.gradle.kts
-├── .gitignore
-└── README.md
-```
-
-## 🛠️ Зависимости
-
-```kotlin
-// Wear OS
-implementation("androidx.wear.tiles:tiles:1.5.0")
-implementation("androidx.wear.protolayout:protolayout:1.3.0")
-implementation("androidx.wear.protolayout:protolayout-material:1.3.0")
-
-// Google Play Services
-implementation("com.google.android.gms:play-services-location:21.3.0")
-
-// Async
-implementation("com.google.guava:guava:33.3.1-android")
-```
-
-## ⚙️ Настройка
-
-### Изменение интервала обновления
-В `AltitudeTileService.kt`, метод `buildTile()`:
-```kotlin
-.setFreshnessIntervalMillis(5_000) // 5 секунд (5000ms)
-```
-
-### Изменение времени кэша
-В `AltitudeTileService.kt`, метод `getPressureAltitude()`:
-```kotlin
-if (age > 300_000) { // 5 минут
-```
-
-## 🤝 Вклад в проект
-
-Баг-репорты и пул-реквесты приветствуются! Для серьезных изменений сначала откройте issue для обсуждения.
-
-## 📄 Лицензия
-
-MIT License - см. [LICENSE](LICENSE) для деталей
-
-## 👨‍💻 Автор
-
-Создано с помощью Claude Code
-
-## 🙏 Благодарности
-
-- Material Design Icons для иконки гор
-- Wear OS Tiles API документация
-- Сообщество Android разработчиков
+MIT, see [LICENSE](LICENSE).
