@@ -94,7 +94,9 @@ class AltitudeRepository private constructor(context: Context) {
         return mutex.withLock {
             if (fix.fixTimeMs - prefs.getLong(KEY_GNSS_APPLIED, 0L) < GNSS_MIN_INTERVAL_MS) return@withLock false
             prefs.edit().putLong(KEY_GNSS_APPLIED, fix.fixTimeMs).apply()
-            update(Atmosphere.offsetFromAltitude(pressure.toDouble(), altitude), sigma, AnchorSource.GNSS, nowMs)
+            mutate("GNSS $altitude m σ=$sigma", nowMs) {
+                updateAltitude(pressure.toDouble(), altitude, sigma, AnchorSource.GNSS, nowMs)
+            }
         }
     }
 
@@ -129,6 +131,9 @@ class AltitudeRepository private constructor(context: Context) {
             return false
         }
         val sigma = WeatherAnchor.qnhSigmaM(Atmosphere.altitude(weather.qnhHpa, pressure))
+        val seaLevelTempK = weather.temperatureC?.let { t ->
+            Atmosphere.seaLevelTempK(t, weather.elevationM ?: Atmosphere.altitude(weather.qnhHpa, pressure))
+        }
         val applied = mutex.withLock {
             prefs.edit()
                 .putLong(KEY_WEATHER_FETCHED, weather.fetchedAtMs)
@@ -136,9 +141,12 @@ class AltitudeRepository private constructor(context: Context) {
                 .putFloat(KEY_WEATHER_LON, weather.longitude.toFloat())
                 .putFloat(KEY_WEATHER_QNH, weather.qnhHpa.toFloat())
                 .apply()
-            update(Atmosphere.offsetFromQnh(pressure, weather.qnhHpa), sigma, AnchorSource.QNH, nowMs)
+            mutate("QNH ${weather.qnhHpa} hPa σ=$sigma T0=$seaLevelTempK K", nowMs) {
+                // Offline the last known temperature stays: it is still closer to the truth than the standard 15 °C.
+                seaLevelTempK?.let { setSeaLevelTemperature(pressure, it) }
+                updateQnh(pressure, weather.qnhHpa, sigma, nowMs)
+            }
         }
-        Log.i(TAG, "QNH ${weather.qnhHpa} hPa applied=$applied")
         return applied
     }
 
@@ -155,37 +163,33 @@ class AltitudeRepository private constructor(context: Context) {
         }
         val applied = mutex.withLock {
             prefs.edit().putLong(KEY_DEM_APPLIED, nowMs).apply()
-            update(
-                Atmosphere.offsetFromAltitude(pressure.toDouble(), elevation),
-                WeatherAnchor.DEM_SIGMA_M,
-                AnchorSource.DEM,
-                nowMs,
-            )
+            mutate("DEM $elevation m", nowMs) {
+                updateAltitude(pressure.toDouble(), elevation, WeatherAnchor.DEM_SIGMA_M, AnchorSource.DEM, nowMs)
+            }
         }
-        Log.i(TAG, "DEM $elevation m applied=$applied")
         return applied
     }
 
     suspend fun calibrate(knownAltitudeM: Double, pressure: Float, nowMs: Long = System.currentTimeMillis()) =
         mutex.withLock {
-            val filter = AltitudeFilter(loadState(nowMs))
-            filter.calibrate(pressure.toDouble(), knownAltitudeM, nowMs)
-            saveState(filter.state)
-            Log.i(TAG, "manual calibration to $knownAltitudeM m at $pressure hPa")
+            mutate("manual $knownAltitudeM m at $pressure hPa", nowMs) {
+                calibrate(pressure.toDouble(), knownAltitudeM, nowMs)
+                true
+            }
         }
 
     private fun pressureFor(fix: GnssFix): Float? = history.at(fix.elapsedRealtimeMs)
 
-    /** Must be called under [mutex]. */
-    private fun update(offsetM: Double, sigmaM: Double, source: AnchorSource, nowMs: Long): Boolean {
+    /** Load, change and save the filter. Must be called under [mutex]. */
+    private fun mutate(what: String, nowMs: Long, block: AltitudeFilter.() -> Boolean): Boolean {
         val filter = AltitudeFilter(loadState(nowMs))
         val before = filter.state
-        val accepted = filter.update(offsetM, sigmaM, source, nowMs)
+        val accepted = filter.block()
         saveState(filter.state)
         Log.i(
             TAG,
-            "$source offset=%.1f σ=%.1f accepted=$accepted: %.1f±%.1f -> %.1f±%.1f".format(
-                offsetM, sigmaM, before.offsetM, before.sigmaM, filter.state.offsetM, filter.state.sigmaM,
+            "$what accepted=$accepted: offset %.1f±%.1f -> %.1f±%.1f, T0 %.1f K".format(
+                before.offsetM, before.sigmaM, filter.state.offsetM, filter.state.sigmaM, filter.state.seaLevelTempK,
             ),
         )
         return accepted
@@ -199,6 +203,7 @@ class AltitudeRepository private constructor(context: Context) {
             timeMs = prefs.getLong(KEY_TIME, nowMs),
             source = AnchorSource.entries.getOrElse(prefs.getInt(KEY_SOURCE, 0)) { AnchorSource.NONE },
             anchorTimeMs = prefs.getLong(KEY_ANCHOR_TIME, 0L),
+            seaLevelTempK = Double.fromBits(prefs.getLong(KEY_SEA_LEVEL_TEMP, Atmosphere.STANDARD_SEA_LEVEL_TEMP_K.toBits())),
         )
     }
 
@@ -209,6 +214,7 @@ class AltitudeRepository private constructor(context: Context) {
             .putLong(KEY_TIME, state.timeMs)
             .putInt(KEY_SOURCE, state.source.ordinal)
             .putLong(KEY_ANCHOR_TIME, state.anchorTimeMs)
+            .putLong(KEY_SEA_LEVEL_TEMP, state.seaLevelTempK.toBits())
             .apply()
     }
 
@@ -241,6 +247,7 @@ class AltitudeRepository private constructor(context: Context) {
         private const val KEY_TIME = "time"
         private const val KEY_SOURCE = "source"
         private const val KEY_ANCHOR_TIME = "anchor_time"
+        private const val KEY_SEA_LEVEL_TEMP = "sea_level_temp_bits"
         private const val KEY_PRESSURE = "pressure"
         private const val KEY_PRESSURE_TIME = "pressure_time"
         private const val KEY_REFRESH_NEXT = "refresh_next"

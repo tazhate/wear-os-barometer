@@ -101,6 +101,41 @@ class AltitudeFilterTest {
     }
 
     @Test
+    fun seaLevelTemperatureFromStationReading() {
+        assertEquals(268.15, Atmosphere.seaLevelTempK(-5.0, 0.0)!!, 1e-9)
+        // -10 °C at 2000 m is +3 °C at sea level by the standard lapse rate.
+        assertEquals(276.15, Atmosphere.seaLevelTempK(-10.0, 2000.0)!!, 1e-9)
+        assertNull(Atmosphere.seaLevelTempK(-90.0, 0.0))
+    }
+
+    @Test
+    fun coldAirShrinksTheClimb() {
+        val filter = AltitudeFilter(FilterState.initial(start))
+        filter.calibrate(1013.25, 0.0, start)
+        filter.setSeaLevelTemperature(1013.25, 268.15)
+        // ISA says 1000 m for 898.76 hPa; at -5 °C the same pressure drop is ~7% less.
+        assertEquals(1000.0 * 268.15 / 288.15, filter.altitude(898.76), 1.5)
+    }
+
+    @Test
+    fun temperatureChangeKeepsTheCurrentAltitude() {
+        val filter = AltitudeFilter(FilterState.initial(start))
+        filter.calibrate(850.0, 1500.0, start)
+        filter.setSeaLevelTemperature(850.0, 260.0)
+        assertEquals(1500.0, filter.altitude(850.0), 1e-6)
+        assertEquals(260.0, filter.state.seaLevelTempK, 1e-9)
+    }
+
+    @Test
+    fun qnhAnchorUsesTheSameTemperature() {
+        val pressure = 900.0
+        val filter = AltitudeFilter(FilterState.initial(start))
+        filter.setSeaLevelTemperature(pressure, 268.15)
+        filter.updateQnh(pressure, 1020.0, 1.0, start)
+        assertEquals(Atmosphere.altitude(1020.0, pressure, 268.15), filter.altitude(pressure), 1.0)
+    }
+
+    @Test
     fun median() {
         assertNull(Atmosphere.median(emptyList()))
         assertEquals(2f, Atmosphere.median(listOf(3f, 1f, 2f)))
