@@ -2,7 +2,6 @@ package com.example.wearbarometer.altitude
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.hardware.SensorManager
 import android.location.Location
 import android.os.SystemClock
 import android.util.Log
@@ -26,7 +25,6 @@ data class AltitudeReading(
 class AltitudeRepository private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val prefs: SharedPreferences = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
     /** Guards the filter state and the "anchor already applied" markers together. */
     private val mutex = Mutex()
@@ -39,10 +37,7 @@ class AltitudeRepository private constructor(context: Context) {
 
     suspend fun reading(pressure: Float?, nowMs: Long = System.currentTimeMillis()): AltitudeReading =
         mutex.withLock {
-            if (pressure != null) {
-                history.add(SystemClock.elapsedRealtime(), pressure)
-                savePressure(pressure, nowMs)
-            }
+            if (pressure != null) savePressure(pressure, nowMs)
             val p = pressure ?: cachedPressure(nowMs)
             val filter = AltitudeFilter(loadState(nowMs)).apply { predict(nowMs) }
             if (p == null) {
@@ -54,29 +49,25 @@ class AltitudeRepository private constructor(context: Context) {
             }
         }
 
+    /** Raw pressure sample for pairing anchors with the same moment. Not smoothed: smoothing lags. */
+    fun recordPressure(pressureHpa: Float) = history.add(SystemClock.elapsedRealtime(), pressureHpa)
+
     /** True when the tile should try to get new anchors in the background. */
     fun anchorsDue(nowMs: Long = System.currentTimeMillis()): Boolean =
         nowMs >= prefs.getLong(KEY_REFRESH_NEXT, 0L)
 
     /**
-     * Collect GNSS and weather anchors. [allowFreshFix] turns GNSS on when the last fix is too old.
-     * Returns true when the filter changed.
+     * Anchors from the last known location, for the tile. The tile has no background location permission,
+     * so it never turns GNSS on: fresh fixes come from the app screen. Returns true when the filter changed.
      */
-    suspend fun refreshAnchors(allowFreshFix: Boolean, nowMs: Long = System.currentTimeMillis()): Boolean {
+    suspend fun refreshAnchors(nowMs: Long = System.currentTimeMillis()): Boolean {
         // If the process dies mid-refresh, retry soon instead of waiting for the full interval.
         prefs.edit().putLong(KEY_REFRESH_NEXT, nowMs + REFRESH_RETRY_MS).apply()
 
-        var fix = gnss.lastFix()
-        if (allowFreshFix && (fix == null || !GnssGate.acceptsAltitude(fix) || pressureFor(fix) == null)) {
-            fix = gnss.currentFix(FRESH_FIX_TIMEOUT_MS) ?: fix
-        }
+        val fix = gnss.lastFix()
         if (fix == null) {
             Log.i(TAG, "no location: only the saved offset is used")
             return false
-        }
-        if (fix.ageMs in 0..FRESH_SAMPLE_MAX_AGE_MS && pressureFor(fix) == null) {
-            // A fresh fix after a long GNSS wait: sample pressure now, it is still the same moment.
-            Barometer.sample(sensorManager, RESAMPLE_MS)?.let { history.add(SystemClock.elapsedRealtime(), it) }
         }
 
         val gnssApplied = applyFix(fix, nowMs)
@@ -168,6 +159,24 @@ class AltitudeRepository private constructor(context: Context) {
             }
         }
         return applied
+    }
+
+    /**
+     * Forget the manual calibration: keep the current value but trust it no more than an unanchored barometer,
+     * and let every anchor apply again right away.
+     */
+    suspend fun resetToSensors(nowMs: Long = System.currentTimeMillis()) = mutex.withLock {
+        mutate("reset to sensors", nowMs) {
+            forget(nowMs)
+            true
+        }
+        prefs.edit()
+            .remove(KEY_GNSS_APPLIED)
+            .remove(KEY_DEM_APPLIED)
+            .remove(KEY_WEATHER_FETCHED)
+            .remove(KEY_NETWORK_FAILED)
+            .remove(KEY_REFRESH_NEXT)
+            .apply()
     }
 
     suspend fun calibrate(knownAltitudeM: Double, pressure: Float, nowMs: Long = System.currentTimeMillis()) =
@@ -262,9 +271,6 @@ class AltitudeRepository private constructor(context: Context) {
         private const val REFRESH_INTERVAL_MS = 30 * 60_000L
         private const val REFRESH_RETRY_MS = 5 * 60_000L
         private const val NETWORK_RETRY_MS = 2 * 60_000L
-        private const val FRESH_FIX_TIMEOUT_MS = 20_000L
-        private const val FRESH_SAMPLE_MAX_AGE_MS = 10_000L
-        private const val RESAMPLE_MS = 1_000L
         private const val QNH_PRESSURE_MAX_AGE_MS = 60_000L
         private const val GNSS_MIN_INTERVAL_MS = 2 * 60_000L
         private const val DEM_MIN_INTERVAL_MS = 30 * 60_000L

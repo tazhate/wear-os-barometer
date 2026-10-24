@@ -136,6 +136,22 @@ class AltitudeFilterTest {
     }
 
     @Test
+    fun forgetKeepsValueAndLetsGnssOverrideWrongCalibration() {
+        val pressure = 1000.0
+        val filter = AltitudeFilter(FilterState.initial(start))
+        filter.calibrate(pressure, 500.0, start)
+        val gnss = Atmosphere.offsetFromAltitude(pressure, 110.0)
+        assertFalse(filter.update(gnss, 5.0, AnchorSource.GNSS, start + 60_000L))
+
+        filter.forget(start + 120_000L)
+        assertEquals(500.0, filter.altitude(pressure), 1e-6)
+        assertEquals(AnchorSource.NONE, filter.state.source)
+
+        assertTrue(filter.update(gnss, 5.0, AnchorSource.GNSS, start + 180_000L))
+        assertEquals(110.0, filter.altitude(pressure), 1.0)
+    }
+
+    @Test
     fun median() {
         assertNull(Atmosphere.median(emptyList()))
         assertEquals(2f, Atmosphere.median(listOf(3f, 1f, 2f)))

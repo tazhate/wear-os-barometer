@@ -10,10 +10,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -85,24 +82,6 @@ class GnssAnchor(context: Context) {
             client.lastLocation.await()?.let { toFix(it) }
         } catch (e: Exception) {
             Log.w(TAG, "lastLocation failed", e)
-            null
-        }
-    }
-
-    /** One fresh fix. HIGH_ACCURACY turns GNSS on, so call it rarely. */
-    @SuppressLint("MissingPermission")
-    suspend fun currentFix(timeoutMs: Long): GnssFix? {
-        if (!hasPermission()) return null
-        val request = CurrentLocationRequest.Builder()
-            .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
-            .setDurationMillis(timeoutMs)
-            .setMaxUpdateAgeMillis(GnssGate.MAX_AGE_MS / 2)
-            .build()
-        val cancellation = CancellationTokenSource()
-        return try {
-            client.getCurrentLocation(request, cancellation.token).await(cancellation)?.let { toFix(it) }
-        } catch (e: Exception) {
-            Log.w(TAG, "getCurrentLocation failed", e)
             null
         }
     }
