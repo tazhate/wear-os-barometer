@@ -43,7 +43,9 @@ class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pressureJob: Job? = null
 
+    /** For display only: the EMA lags ~1.4 s, so anchors are paired with raw samples instead. */
     private var smoothedPressure: Float? = null
+    private var rawPressure: Float? = null
     private var lastReading: AltitudeReading? = null
     private var lastRenderMs = 0L
 
@@ -71,7 +73,7 @@ class MainActivity : Activity() {
         repository = AltitudeRepository.get(this)
 
         altitudeValue.setOnLongClickListener {
-            startCalibration()
+            if (calibrating) resetToSensors() else startCalibration()
             true
         }
         altitudeValue.setOnClickListener {
@@ -96,11 +98,12 @@ class MainActivity : Activity() {
         }
         pressureJob = scope.launch {
             Barometer.pressure(sensorManager, LIVE_SAMPLE_PERIOD_US).collect { p ->
+                repository.recordPressure(p)
+                rawPressure = p
                 val previous = smoothedPressure
                 smoothedPressure = if (previous == null) p else previous + SMOOTHING * (p - previous)
                 render(force = previous == null)
                 if (previous == null) {
-                    // render() has put the first sample into the pressure history the anchors are paired with.
                     launch { repository.gnss.lastFix()?.let { applyAnchors(it) } }
                 }
             }
@@ -119,6 +122,14 @@ class MainActivity : Activity() {
         pressureJob?.cancel()
         pressureJob = null
         fusedClient.removeLocationUpdates(locationCallback)
+        // After a pause the user may be elsewhere: start smoothing from scratch, drop an unsaved calibration.
+        smoothedPressure = null
+        rawPressure = null
+        if (calibrating) {
+            calibrating = false
+            altitudeValue.setTextColor(NORMAL_COLOR)
+            updateHint()
+        }
         super.onStop()
     }
 
@@ -168,12 +179,24 @@ class MainActivity : Activity() {
     }
 
     private fun finishCalibration() {
-        val pressure = smoothedPressure ?: return
+        val pressure = rawPressure ?: return
         calibrating = false
         altitudeValue.setTextColor(NORMAL_COLOR)
         updateHint()
         scope.launch {
             repository.calibrate(calibrationM, pressure)
+            render(force = true)
+        }
+    }
+
+    /** Drop the manual altitude and let GNSS and weather set it again. */
+    private fun resetToSensors() {
+        calibrating = false
+        altitudeValue.setTextColor(NORMAL_COLOR)
+        updateHint()
+        scope.launch {
+            repository.resetToSensors()
+            repository.gnss.lastFix()?.let { applyAnchors(it) }
             render(force = true)
         }
     }
@@ -206,7 +229,6 @@ class MainActivity : Activity() {
 
         /** EMA at 4 Hz: ~2 s time constant, removes the 0.01 hPa noise without lag on stairs. */
         private const val SMOOTHING = 0.15f
-
 
         private const val NORMAL_COLOR = 0xFFFFFFFF.toInt()
         private const val CALIBRATION_COLOR = 0xFFFFB74D.toInt()

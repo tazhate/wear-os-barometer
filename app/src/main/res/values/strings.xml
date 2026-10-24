@@ -8,7 +8,7 @@
     <string name="status_no_data">Нет данных</string>
     <string name="status_open_app">Откройте приложение</string>
     <string name="status_no_location">Без геолокации: только ручная калибровка</string>
-    <string name="status_calibrate_hint">Колесико - высота, тап - сохранить</string>
+    <string name="status_calibrate_hint">Колесико - высота, тап - сохранить, удержание - по датчикам</string>
 
     <!-- ±12 м · GPS -->
     <string name="detail_format">±%1$d м · %2$s</string>

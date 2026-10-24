@@ -87,6 +87,16 @@ class AltitudeFilter(var state: FilterState) {
         )
     }
 
+    /** Drop all anchor confidence but keep the current offset, so the value does not jump until an anchor arrives. */
+    fun forget(nowMs: Long) {
+        state = state.copy(
+            varianceM2 = MAX_VARIANCE_M2,
+            timeMs = max(nowMs, state.timeMs),
+            source = AnchorSource.NONE,
+            anchorTimeMs = 0L,
+        )
+    }
+
     /** Hard reset to a known altitude: the user knows where they stand, nothing is averaged in. */
     fun calibrate(pressureHpa: Double, knownAltitudeM: Double, nowMs: Long) {
         state = state.copy(

@@ -53,7 +53,9 @@ class AltitudeTileService : SuspendingTileService() {
     override suspend fun tileRequest(requestParams: RequestBuilders.TileRequest): TileBuilders.Tile {
         val repository = AltitudeRepository.get(this)
         val reading = if (Barometer.hasSensor(sensorManager)) {
-            repository.reading(Barometer.sample(sensorManager, SAMPLE_MS))
+            val pressure = Barometer.sample(sensorManager, SAMPLE_MS)
+            pressure?.let { repository.recordPressure(it) }
+            repository.reading(pressure)
         } else {
             AltitudeReading(ReadingStatus.NO_BAROMETER, null, 0.0, AnchorSource.NONE, null)
         }
@@ -72,13 +74,13 @@ class AltitudeTileService : SuspendingTileService() {
             .build()
     }
 
-    /** GNSS and network can take tens of seconds: render now, re-render when anchors arrive. */
+    /** Network can take seconds: render now, re-render when anchors arrive. */
     private fun refreshInBackground(repository: AltitudeRepository) {
         if (!refreshing.compareAndSet(false, true)) return
         val appContext = applicationContext
         refreshScope.launch {
             try {
-                if (repository.refreshAnchors(allowFreshFix = true)) {
+                if (repository.refreshAnchors()) {
                     TileService.getUpdater(appContext).requestUpdate(AltitudeTileService::class.java)
                 }
             } catch (e: Exception) {

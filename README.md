@@ -16,20 +16,22 @@ altitude = isa(P) - b
 
 | Anchor | Needs network | Error |
 |---|---|---|
-| Manual calibration (long-press the value, turn the crown, tap) | no | 1 m |
+| Manual calibration (long-press the value, turn the crown, tap to save) | no | 1 m |
 | GNSS height above the geoid (`mslAltitudeMeters`, L1+L5 on this watch) | no | receiver estimate, fixes worse than 25 m are dropped |
 | QNH from Open-Meteo (`pressure_msl`) | yes | 8-10 m |
 | Terrain elevation from Open-Meteo at the fix | yes | 25 m |
 
 Without anchors the uncertainty grows by about 3 m per hour. It is shown under the value: `±12 м · GPS`. Above 15 m the value gets a `~` prefix, above 50 m also a `?`. In the mountains without network, GNSS and manual calibration remain.
 
+Manual calibration is for a point with a known altitude, like a summit marker or a pass sign, when GNSS is poor and there is no network. It is trusted to 1 m, so it overrides the other anchors. To go back to the sensors, long-press the value to enter calibration and long-press again: the manual value is dropped and GNSS and weather set the altitude anew. Leaving the screen without a tap discards an unsaved calibration.
+
 GNSS altitude is paired with the pressure at the moment of the fix, not the current one. Otherwise a climb in progress would leak into the weather correction.
 
 ## Tile and app
 
-The tile refreshes once a minute. Each refresh samples the barometer for about a second and shows the altitude with the saved offset. Every 30 minutes the tile asks for a location fix and the weather in the background, and redraws if anything arrived. Tapping the tile opens the app.
+The tile refreshes once a minute. Each refresh samples the barometer for about a second and shows the altitude with the saved offset. Every 30 minutes the tile takes the last known location, fetches the weather for it in the background, and redraws if anything arrived. The tile never turns GNSS on: the app has no background location permission. Tapping the tile opens the app.
 
-The app screen reads the barometer 4 times a second and keeps GNSS on while it is open. Location permission and manual calibration live here.
+The app screen reads the barometer 4 times a second and keeps GNSS on while it is open, so fresh GNSS anchors come from here. Location permission and manual calibration live here.
 
 Coordinates are sent to Open-Meteo: rounded to 0.01° (about 1 km) for the weather, exact for terrain elevation. No API key is needed.
 
