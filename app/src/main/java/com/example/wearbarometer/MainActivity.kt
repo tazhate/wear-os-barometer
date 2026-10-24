@@ -10,9 +10,7 @@ import android.os.Looper
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewConfiguration
 import android.widget.TextView
-import androidx.core.view.ViewConfigurationCompat
 import com.example.wearbarometer.altitude.AltitudeReading
 import com.example.wearbarometer.altitude.AltitudeRepository
 import com.example.wearbarometer.altitude.Barometer
@@ -51,6 +49,7 @@ class MainActivity : Activity() {
 
     private var calibrating = false
     private var calibrationM = 0.0
+    private val crown = CrownAcceleration()
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -184,9 +183,7 @@ class MainActivity : Activity() {
         if (event.action != MotionEvent.ACTION_SCROLL || !event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) {
             return false
         }
-        val pixels = -event.getAxisValue(MotionEvent.AXIS_SCROLL) *
-            ViewConfigurationCompat.getScaledVerticalScrollFactor(ViewConfiguration.get(this), this)
-        calibrationM += pixels / PIXELS_PER_METER
+        calibrationM += crown.meters(event.getAxisValue(MotionEvent.AXIS_SCROLL), event.eventTime)
         altitudeValue.text = calibrationM.roundToInt().toString()
         return true
     }
@@ -210,8 +207,6 @@ class MainActivity : Activity() {
         /** EMA at 4 Hz: ~2 s time constant, removes the 0.01 hPa noise without lag on stairs. */
         private const val SMOOTHING = 0.15f
 
-        /** Crown sensitivity for calibration. Tune on the device. */
-        private const val PIXELS_PER_METER = 8f
 
         private const val NORMAL_COLOR = 0xFFFFFFFF.toInt()
         private const val CALIBRATION_COLOR = 0xFFFFB74D.toInt()
