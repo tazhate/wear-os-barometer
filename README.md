@@ -2,6 +2,8 @@
 
 Altitude above sea level on the watch, as a tile and as an app screen. Tested on a Pixel Watch 4 (Wear OS on Android 17). The UI is in Russian.
 
+<img src="screenshots/tile.png" width="200" alt="Tile"/> <img src="screenshots/app.png" width="200" alt="App"/>
+
 ## Where the altitude comes from
 
 A bare barometer on the standard atmosphere (P0 = 1013.25 hPa) is off by however much the weather has moved the pressure. 1 hPa near sea level is 8.3 m. During the anticyclone on 2026-10-23, sea level pressure in Moscow was 1029.8 hPa, and the standard formula read 125 m low.
