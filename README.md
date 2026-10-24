@@ -29,9 +29,9 @@ GNSS altitude is paired with the pressure at the moment of the fix, not the curr
 
 ## Tile and app
 
-The tile refreshes once a minute. Each refresh samples the barometer for about a second and shows the altitude with the saved offset. Every 30 minutes the tile takes the last known location, fetches the weather for it in the background, and redraws if anything arrived. The tile never turns GNSS on: the app has no background location permission. Tapping the tile opens the app.
+The tile refreshes once a minute. Each refresh samples the barometer for about a second and shows the altitude with the saved offset. Every 30 minutes the tile starts a WorkManager job while it is on screen. With location allowed "all the time", the job turns GNSS on for one fresh fix (up to 30 s) and records the barometer while it waits, so the fix gets the pressure of its own moment. Without background location it uses the last known location, which usually only gives a weather update. The tile redraws if anything arrived. Tapping the tile opens the app.
 
-The app screen reads the barometer 4 times a second and keeps GNSS on while it is open, so fresh GNSS anchors come from here. Location permission and manual calibration live here.
+The app screen reads the barometer 4 times a second and keeps GNSS on while it is open. Location permissions and manual calibration live here: after the regular location permission it asks for "all the time", and if that was declined, a hint at the bottom opens the app's permission settings.
 
 Coordinates are sent to Open-Meteo: rounded to 0.01° (about 1 km) for the weather, exact for terrain elevation. No API key is needed.
 

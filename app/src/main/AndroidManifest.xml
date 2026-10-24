@@ -4,6 +4,8 @@
     <!-- Permissions for GPS/Location -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- The tile's anchor worker turns GNSS on with the app closed -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- QNH and terrain elevation from Open-Meteo -->
     <uses-permission android:name="android.permission.INTERNET" />

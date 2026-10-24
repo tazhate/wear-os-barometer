@@ -3,10 +3,14 @@ package com.example.wearbarometer
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.hardware.SensorManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Looper
+import android.provider.Settings
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
@@ -80,6 +84,14 @@ class MainActivity : Activity() {
             if (calibrating) finishCalibration()
         }
         root.setOnGenericMotionListener { _, event -> onRotary(event) }
+        hint.setOnClickListener {
+            // After a denial Wear OS no longer shows the request dialog: only the app settings can grant it.
+            if (repository.gnss.hasPermission() && !repository.gnss.hasBackgroundPermission()) {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)),
+                )
+            }
+        }
 
         if (!repository.gnss.hasPermission()) {
             requestPermissions(
@@ -140,11 +152,17 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != LOCATION_PERMISSION_REQUEST_CODE) return
-        if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE && grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
             startLocationUpdates()
+            // Android grants "all the time" only as a separate, second request.
+            if (!repository.gnss.hasBackgroundPermission()) requestBackgroundLocation()
         }
         updateHint()
+    }
+
+    private fun requestBackgroundLocation() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), BACKGROUND_LOCATION_REQUEST_CODE)
     }
 
     /** GNSS runs only while the screen is visible. */
@@ -215,6 +233,7 @@ class MainActivity : Activity() {
         val text = when {
             calibrating -> getString(R.string.status_calibrate_hint)
             !repository.gnss.hasPermission() -> getString(R.string.status_no_location)
+            !repository.gnss.hasBackgroundPermission() -> getString(R.string.status_no_background_location)
             else -> null
         }
         hint.text = text
@@ -223,6 +242,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
+        private const val BACKGROUND_LOCATION_REQUEST_CODE = 1002
         private const val LIVE_SAMPLE_PERIOD_US = 250_000
         private const val LOCATION_INTERVAL_MS = 1_000L
         private const val RENDER_INTERVAL_MS = 1_000L
