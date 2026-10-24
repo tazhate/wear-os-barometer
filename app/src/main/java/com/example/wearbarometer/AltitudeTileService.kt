@@ -14,7 +14,6 @@ import androidx.wear.protolayout.ResourceBuilders
 import androidx.wear.protolayout.TimelineBuilders
 import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.TileBuilders
-import androidx.wear.tiles.TileService
 import com.example.wearbarometer.altitude.AltitudeReading
 import com.example.wearbarometer.altitude.AltitudeRepository
 import com.example.wearbarometer.altitude.AnchorSource
@@ -22,11 +21,6 @@ import com.example.wearbarometer.altitude.Barometer
 import com.example.wearbarometer.altitude.ReadingStatus
 import com.google.android.horologist.annotations.ExperimentalHorologistApi
 import com.google.android.horologist.tiles.SuspendingTileService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicBoolean
 
 @OptIn(ExperimentalHorologistApi::class)
 class AltitudeTileService : SuspendingTileService() {
@@ -62,7 +56,10 @@ class AltitudeTileService : SuspendingTileService() {
         Log.d(TAG, "tile reading: $reading")
 
         if (reading.pressureHpa != null && repository.anchorsDue()) {
-            refreshInBackground(repository)
+            // Enqueued while the tile is shown: the process is bound to the system UI, so the barometer still
+            // delivers samples while the worker waits for a fix.
+            repository.markRefreshStarted()
+            AnchorWorker.enqueue(this)
         }
 
         return TileBuilders.Tile.Builder()
@@ -72,23 +69,6 @@ class AltitudeTileService : SuspendingTileService() {
                 TimelineBuilders.Timeline.fromLayoutElement(layout(reading, requestParams.deviceConfiguration)),
             )
             .build()
-    }
-
-    /** Network can take seconds: render now, re-render when anchors arrive. */
-    private fun refreshInBackground(repository: AltitudeRepository) {
-        if (!refreshing.compareAndSet(false, true)) return
-        val appContext = applicationContext
-        refreshScope.launch {
-            try {
-                if (repository.refreshAnchors()) {
-                    TileService.getUpdater(appContext).requestUpdate(AltitudeTileService::class.java)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "anchor refresh failed", e)
-            } finally {
-                refreshing.set(false)
-            }
-        }
     }
 
     private fun layout(
@@ -165,8 +145,5 @@ class AltitudeTileService : SuspendingTileService() {
         private const val ICON_ID = "ic_mountain"
         private const val SAMPLE_MS = 1_200L
         private const val FRESHNESS_MS = 60_000L
-
-        private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        private val refreshing = AtomicBoolean(false)
     }
 }

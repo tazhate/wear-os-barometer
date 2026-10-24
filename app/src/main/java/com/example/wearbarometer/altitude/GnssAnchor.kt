@@ -10,7 +10,10 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -74,6 +77,32 @@ class GnssAnchor(context: Context) {
             PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
+
+    /** "Allow all the time": the tile's worker may turn GNSS on with the app closed. */
+    fun hasBackgroundPermission(): Boolean =
+        hasPermission() && (
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+            )
+
+    /** A freshly measured fix, never a cached one: a cached fix has no pressure sample of its moment. */
+    @SuppressLint("MissingPermission")
+    suspend fun currentFix(timeoutMs: Long): GnssFix? {
+        if (!hasPermission()) return null
+        val request = CurrentLocationRequest.Builder()
+            .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+            .setDurationMillis(timeoutMs)
+            .setMaxUpdateAgeMillis(0)
+            .build()
+        val cancellation = CancellationTokenSource()
+        return try {
+            client.getCurrentLocation(request, cancellation.token).await(cancellation)?.let { toFix(it) }
+        } catch (e: Exception) {
+            Log.w(TAG, "getCurrentLocation failed", e)
+            null
+        }
+    }
 
     @SuppressLint("MissingPermission")
     suspend fun lastFix(): GnssFix? {

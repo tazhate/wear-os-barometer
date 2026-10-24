@@ -56,23 +56,28 @@ class AltitudeRepository private constructor(context: Context) {
     fun anchorsDue(nowMs: Long = System.currentTimeMillis()): Boolean =
         nowMs >= prefs.getLong(KEY_REFRESH_NEXT, 0L)
 
-    /**
-     * Anchors from the last known location, for the tile. The tile has no background location permission,
-     * so it never turns GNSS on: fresh fixes come from the app screen. Returns true when the filter changed.
-     */
-    suspend fun refreshAnchors(nowMs: Long = System.currentTimeMillis()): Boolean {
-        // If the process dies mid-refresh, retry soon instead of waiting for the full interval.
+    /** Called when the tile's anchor work starts, so a killed job is retried soon rather than in 30 minutes. */
+    fun markRefreshStarted(nowMs: Long = System.currentTimeMillis()) {
         prefs.edit().putLong(KEY_REFRESH_NEXT, nowMs + REFRESH_RETRY_MS).apply()
+    }
 
-        val fix = gnss.lastFix()
+    /** Apply GNSS and weather anchors from [fix] for the tile. Returns true when the filter changed. */
+    suspend fun refreshAnchors(fix: GnssFix?, nowMs: Long = System.currentTimeMillis()): Boolean {
         if (fix == null) {
             Log.i(TAG, "no location: only the saved offset is used")
+            prefs.edit().putLong(KEY_REFRESH_NEXT, nowMs + REFRESH_RETRY_MS).apply()
             return false
         }
 
         val gnssApplied = applyFix(fix, nowMs)
         val weatherApplied = applyWeather(fix, nowMs)
-        prefs.edit().putLong(KEY_REFRESH_NEXT, System.currentTimeMillis() + REFRESH_INTERVAL_MS).apply()
+        // No pressure to pair with: the job ran after the process went idle and Android held back the barometer.
+        // Then GNSS, DEM and QNH may all have been skipped. Try again soon, when the tile is on screen.
+        val noCurrentPressure = history.at(SystemClock.elapsedRealtime(), QNH_PRESSURE_MAX_AGE_MS) == null
+        val missedPressure = noCurrentPressure || (GnssGate.acceptsAltitude(fix) && pressureFor(fix) == null)
+        if (missedPressure) Log.i(TAG, "no matching pressure, retrying soon")
+        val next = if (missedPressure) REFRESH_RETRY_MS else REFRESH_INTERVAL_MS
+        prefs.edit().putLong(KEY_REFRESH_NEXT, System.currentTimeMillis() + next).apply()
         return gnssApplied || weatherApplied
     }
 
