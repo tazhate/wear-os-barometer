@@ -50,17 +50,21 @@ class AltitudeFilter(var state: FilterState) {
         predict(nowMs)
         val r = sigmaM * sigmaM
         val innovation = measuredOffsetM - state.offsetM
+        // Without any anchor yet (fresh state or after a reset) the old offset is a guess that may be far off:
+        // the first anchor initializes the filter, with no outlier gate and no averaging with the guess.
+        val unanchored = state.source == AnchorSource.NONE
         // A manual calibration always wins: the user knows where they stand.
-        if (source != AnchorSource.MANUAL && abs(innovation) > GATE_SIGMAS * sqrt(state.varianceM2 + r)) {
+        val gated = source != AnchorSource.MANUAL && !unanchored
+        if (gated && abs(innovation) > GATE_SIGMAS * sqrt(state.varianceM2 + r)) {
             return false
         }
-        val gain = state.varianceM2 / (state.varianceM2 + r)
+        val gain = if (unanchored) 1.0 else state.varianceM2 / (state.varianceM2 + r)
         val floor = if (source == AnchorSource.MANUAL) MIN_VARIANCE_MANUAL_M2 else MIN_VARIANCE_M2
         // The label names the anchor that defines the value, not a weak one that barely moved it.
-        val dominant = gain >= LABEL_MIN_GAIN || state.source == AnchorSource.NONE
+        val dominant = gain >= LABEL_MIN_GAIN
         state = state.copy(
             offsetM = state.offsetM + gain * innovation,
-            varianceM2 = max((1 - gain) * state.varianceM2, floor),
+            varianceM2 = max(if (unanchored) r else (1 - gain) * state.varianceM2, floor),
             source = if (dominant) source else state.source,
             anchorTimeMs = if (dominant) nowMs else state.anchorTimeMs,
         )

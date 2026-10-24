@@ -152,6 +152,18 @@ class AltitudeFilterTest {
     }
 
     @Test
+    fun resetRecoversFromFarOffCalibration() {
+        val pressure = 1000.0
+        val filter = AltitudeFilter(FilterState.initial(start))
+        filter.calibrate(pressure, 700.0, start)
+        filter.forget(start + 60_000L)
+        assertTrue(filter.update(Atmosphere.offsetFromAltitude(pressure, 110.0), 5.0, AnchorSource.GNSS, start + 120_000L))
+        assertEquals(110.0, filter.altitude(pressure), 1.0)
+        // Once anchored, the gate is back.
+        assertFalse(filter.update(Atmosphere.offsetFromAltitude(pressure, 700.0), 5.0, AnchorSource.GNSS, start + 180_000L))
+    }
+
+    @Test
     fun median() {
         assertNull(Atmosphere.median(emptyList()))
         assertEquals(2f, Atmosphere.median(listOf(3f, 1f, 2f)))
